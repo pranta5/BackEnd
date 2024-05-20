@@ -4,6 +4,7 @@ import {User} from "../models/user.model.js";
 import {uploadOnCloudinary} from "../utils/cloudinary.js"
 import {ApiResponse} from "../utils/ApiResponse.js"
 import jwt from "jsonwebtoken"
+import mongoose from "mongoose";
 
 const generateAccessAndRefereshTokens = async(userId)=>{
     try {
@@ -143,8 +144,8 @@ const logoutUser = asyncHandler(async(req,res)=>{
     await User.findByIdAndUpdate(
         req.user._id,
         {
-            $set:{
-                refreshToken: undefined
+            $unset:{
+                refreshToken: 1     //this removes the field from document
             }
         },
         {
@@ -160,7 +161,7 @@ const logoutUser = asyncHandler(async(req,res)=>{
     .status(200)
     .clearCookie("accessToken",options)
     .clearCookie("refreshToken",options)
-    .json(new ApiResponse(200,{},"user logedout"))
+    .json(new ApiResponse(200,{},"user logged out"))
 
 })
 
@@ -313,7 +314,7 @@ const updateUserCoverImage = asyncHandler(async(req,res)=>{
 
 const getUserChannelProfile = asyncHandler(async(req,res)=>{
     const {username} = req.params
-    if (!username?.trim) {
+    if (!username?.trim()) {
         throw new ApiError(400,"user name is missing")
     }
 
@@ -328,7 +329,7 @@ const getUserChannelProfile = asyncHandler(async(req,res)=>{
                 from:"subscriptions",
                 localField:"_id",
                 foreignField:"channel",
-                as: "Subscribers"
+                as: "subscribers"
 
             }
         },
@@ -337,20 +338,32 @@ const getUserChannelProfile = asyncHandler(async(req,res)=>{
                 from:"subscriptions",
                 localField: "_id",
                 foreignField:"subscriber",
-                as: "SubscribeTo"
+                as: "subscribeTo"
             }
         },
         {
             $addFields: {
-                subcribersCount: {
-                    $size:"$Subscribers"
+                subscribersCount: {
+                    $size:"$subscribers"
                 },
                 channelSubscribedToCount: {
-                    $size:"$SubscribeTo"
+                    $size:"$subscribeTo"
                 },
-                issubscribed: {
-                    $cond: {
-                        if:{$in:[req.user?._id,"Subscribers.subscriber"]},
+                isSubscribed: {
+                    $cond: {        // previous code     if: {$in: [req.user?._id, "$subscribers.subscriber"]},
+
+                        if: { $in: [
+                            req.user?._id,
+                            {
+                                $map:
+                                { 
+                                    input: "$subscribers",
+                                    as: "sub",
+                                    in: "$$sub.subscriber"
+                                }
+                            }
+                        ]
+                    },
                         then: true,
                         else: false
                     }
@@ -362,7 +375,7 @@ const getUserChannelProfile = asyncHandler(async(req,res)=>{
                 username: 1,
                 subcribersCount: 1,
                 channelSubscribedToCount :1,
-                issubscribed: 1,
+                isSubscribed: 1,
                 avatar: 1,
                 coverImage: 1,
                 email :1
@@ -372,15 +385,15 @@ const getUserChannelProfile = asyncHandler(async(req,res)=>{
     if (!channel?.length) {
         throw new ApiError(404,"channel does not exists")
     }
-    console.log(channel)
 
     return res
     .status(200)
     .json(
-        new ApiError(200,channel[0],"user channel fetched")
+        new ApiResponse(200,channel[0],"user channel fetched")
     )
 
 })
+
 
 const getWatchHistory = asyncHandler(async(req,res)=>{
     const user = await User.aggregate([
@@ -434,7 +447,9 @@ const getWatchHistory = asyncHandler(async(req,res)=>{
             "watch history fetched"
         )
     )
+
 })
+
 
 export {
     registerUser,
